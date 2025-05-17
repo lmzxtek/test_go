@@ -1,4 +1,4 @@
-name: Release Build
+name: Release Hello World
 
 on:
   push:
@@ -8,30 +8,55 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [windows, linux]
+        goarch: [amd64]
+    name: Build for ${{ matrix.goos }}-${{ matrix.goarch }}
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.24'
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
 
-    - name: Build All Platforms
-      run: |
-        mkdir -p bin
-        PLATFORMS="windows/amd64 linux/amd64 darwin/amd64 darwin/arm64"
-        for PLATFORM in $PLATFORMS; do
-          GOOS=${PLATFORM%/*}
-          GOARCH=${PLATFORM#*/}
-          OUTPUT="bin/hello-${GOOS}-${GOARCH}"
-          if [ $GOOS = "windows" ]; then
-            OUTPUT+='.exe'
-          fi
-          GOOS=$GOOS GOARCH=$GOARCH go build -o $OUTPUT .
-        done
+      - name: Build
+        run: |
+          mkdir -p dist
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o dist/hello-${{ matrix.goos }}-${{ matrix.goarch }}$EXT main.go
 
-    - name: Upload Release Assets
-      uses: softprops/action-gh-release@v1
-      with:
-        files: bin/*
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hello-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/hello-${{ matrix.goos }}-${{ matrix.goarch }}*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Display downloaded files
+        run: ls -R ./artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Release ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          body: |
+            自动构建发布版本 ${{ github.ref_name }}
+            支持平台：
+            - Windows (amd64)
+            - Linux (amd64)
+          files: ./artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
